@@ -1,26 +1,40 @@
 mod game_config;
 
+use std::f32::consts::PI;
+
 use bevy::prelude::*;
 use bevy::utils::default;
 use game_config::GameConfig;
+use rand::distributions::{Distribution, Uniform};
 
 #[derive(Component)]
 struct Velocity(Vec2);
 
 fn main() {
     App::new()
-    .insert_resource(GameConfig {target_number_of_boids: 2})
-    .insert_resource(AmbientLight{ color: Color::ALICE_BLUE, brightness: 0.1 })
-    .add_plugins(DefaultPlugins)
-    .add_startup_system(setup)
-    .add_system(apply_velocity_system)
-    .run();
+        .insert_resource(GameConfig {
+            target_number_of_boids: 200,
+        })
+        .insert_resource(AmbientLight {
+            color: Color::ALICE_BLUE,
+            brightness: 0.1,
+        })
+        .add_plugins(DefaultPlugins)
+        .add_startup_system(setup)
+        .add_system(apply_velocity_system)
+        .run();
 }
 
-fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
+fn setup(
+    mut commands: Commands,
+    game_config: Res<GameConfig>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
     println!("hello world!");
-    commands.spawn_bundle(PerspectiveCameraBundle{
-        transform: Transform::from_xyz(0.0,10.0,1.0*10.0).looking_at((0.0,0.0,0.0).into(), (0.0,1.0,0.0).into()),
+    commands.spawn_bundle(PerspectiveCameraBundle {
+        transform: Transform::from_xyz(0.0, 10.0, 1.0 * 10.0)
+            .looking_at((0.0, 0.0, 0.0).into(), (0.0, 1.0, 0.0).into()),
         ..default()
     });
 
@@ -32,19 +46,30 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
             perceptual_roughness: 0.1,
             ..default()
         }),
+        transform: Transform::default().with_scale((1.5,1.0,1.5).into()),
         ..default()
     });
 
-    // some cube
-    commands.spawn_bundle(PbrBundle{
-        mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
-            material: materials.add(StandardMaterial {
-                base_color: Color::RED,
+    // spawn boids
+    let velocity_between = Uniform::from(-1.0..1.0f32);
+    let mut rng = rand::thread_rng();
+
+    for boid in 0..game_config.target_number_of_boids {
+        commands
+            .spawn_bundle(PbrBundle {
+                mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
+                material: materials.add(StandardMaterial {
+                    base_color: Color::RED,
+                    ..default()
+                }),
+                transform: Transform::from_xyz(0.0, 0.5, 0.0).with_scale((0.15,1.0,0.15).into()),
                 ..default()
-            }),
-            transform: Transform::from_xyz(0.0, 0.5, 0.0),
-            ..default()
-    }).insert(Velocity(Vec2::new(0.0,0.0)));
+            })
+            .insert(Velocity(Vec2::new(
+                velocity_between.sample(&mut rng),
+                velocity_between.sample(&mut rng),
+            )));
+    }
 
     // directional light
     const HALF_SIZE: f32 = 10.0;
@@ -66,17 +91,24 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
         },
         transform: Transform {
             translation: Vec3::new(0.0, 2.0, 0.0),
-            rotation: Quat::from_euler(EulerRot::XYZ, -std::f32::consts::FRAC_PI_4, -std::f32::consts::FRAC_PI_4, 0.0),
+            rotation: Quat::from_euler(
+                EulerRot::XYZ,
+                -std::f32::consts::FRAC_PI_4,
+                -std::f32::consts::FRAC_PI_4,
+                0.0,
+            ),
             ..default()
         },
         ..default()
     });
 }
 
-fn apply_velocity_system(mut boids_query: Query<(&Velocity, &mut Transform)>, time: Res<Time>){
-    let delta_time = time.delta_seconds();
+fn apply_velocity_system(mut boids_query: Query<(&Velocity, &mut Transform)>, time: Res<Time>) {
     for (velocity, mut boid_transform) in boids_query.iter_mut() {
-        boid_transform.translation.x += 1.5 *delta_time;
-        boid_transform.translation.x = boid_transform.translation.x % 10.0;
+        let Velocity(velocity_value) = velocity;
+        let velocity_this_frame = *velocity_value * time.delta_seconds();
+        let new_translation = Vec3::new(velocity_this_frame.x, 0.0, velocity_this_frame.y);
+        boid_transform.translation += new_translation;
+        boid_transform.rotation = Quat::from_rotation_arc(-Vec3::Z, Vec3::new(velocity_this_frame.x, 0.0, velocity_this_frame.y).normalize());
     }
 }

@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 bevy = { version = "0.7.0"}
 iyes_loopless = { version = "0.6.1" }
+rand = "0.8.5"
 
 # Enable a small amount of optimization in debug mode
 [profile.dev]
