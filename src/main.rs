@@ -2,9 +2,12 @@ mod game_config;
 
 use bevy::prelude::*;
 use bevy::utils::default;
-use bevy_web_fullscreen::FullViewportPlugin;
-use game_config::GameConfig;
 use rand::distributions::{Distribution, Uniform};
+use game_config::GameConfig;
+
+#[cfg(target_family = "wasm")]
+use bevy_web_fullscreen::FullViewportPlugin;
+
 
 #[derive(Component)]
 struct Velocity(Vec2);
@@ -13,7 +16,7 @@ fn main() {
     let mut app = App::new();
     app.insert_resource(GameConfig {
         target_number_of_boids: 200,
-        view_range: 100.0,
+        view_range: 2.5,
     })
     .insert_resource(AmbientLight {
         color: Color::ALICE_BLUE,
@@ -118,31 +121,31 @@ fn cohesion_system(
     mut boids_query: Query<(&mut Velocity, &Transform)>,
     game_config: Res<GameConfig>,
 ) {
-    // todo: get boids, other than current, within view_range
     let view_range_sq = game_config.view_range * game_config.view_range;
     let all_boids: Vec<Vec3> = boids_query.iter().map(|b| b.1.translation).collect();
 
     for (mut velocity, boid_transform) in boids_query.iter_mut() {
         let this_boid_pos = boid_transform.translation;
         let mut sum_of_other_boids_positions = Vec2::default();
+        let mut boids_in_view_range = 0;
         for other_boid in all_boids.iter() {
-            if boid_transform.translation == *other_boid {
-                // very naive, and compares floats
+            if boid_transform.translation == *other_boid { // very naive, and compares floats
                 continue;
             }
-
             
             if this_boid_pos.distance_squared(*other_boid) > view_range_sq {
                 continue;
             }
             sum_of_other_boids_positions += Vec2::new(other_boid.x, other_boid.z);
+            boids_in_view_range += 1;
         }
 
-        velocity.0 += Vec2::lerp(
-            Vec2::new(this_boid_pos.x, this_boid_pos.z),
-            sum_of_other_boids_positions / ((all_boids.len() - 1) as f32),
-            0.001,
-        );
+        // velocity.0 += Vec2::lerp(
+        //     Vec2::new(this_boid_pos.x, this_boid_pos.z),
+        //     sum_of_other_boids_positions / (boids_in_view_range as f32),
+        //     0.01,
+        // );
+        velocity.0 += (sum_of_other_boids_positions / (boids_in_view_range as f32) - Vec2::new(this_boid_pos.x, this_boid_pos.z)) / 100.0;
     }
 }
 
@@ -150,6 +153,7 @@ fn apply_velocity_system(mut boids_query: Query<(&Velocity, &mut Transform)>, ti
     for (velocity, mut boid_transform) in boids_query.iter_mut() {
         let Velocity(velocity_value) = velocity;
         let velocity_this_frame = *velocity_value * time.delta_seconds();
+        // velocity_this_frame.x = 0.0; //REMOVE THIS
         let new_translation = Vec3::new(velocity_this_frame.x, 0.0, velocity_this_frame.y);
         boid_transform.translation += new_translation;
         boid_transform.rotation = Quat::from_rotation_arc(
