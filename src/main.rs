@@ -1,8 +1,11 @@
 mod game_config;
 
+use std::f32::consts::PI;
+
+use bevy::render::camera::Projection;
 use bevy::utils::default;
 use bevy::{math::Vec3Swizzles, prelude::*};
-use bevy_inspector_egui::WorldInspectorPlugin;
+// use bevy_inspector_egui::WorldInspectorPlugin;
 use game_config::GameConfig;
 use rand::distributions::{Distribution, Uniform};
 
@@ -16,7 +19,7 @@ fn main() {
     let mut app = App::new();
     app.insert_resource(GameConfig {
         target_number_of_boids: 200,
-        view_range: 2.0,
+        view_range: 2000.0,
     })
     .insert_resource(AmbientLight {
         color: Color::ALICE_BLUE,
@@ -41,7 +44,7 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    commands.spawn_bundle(PerspectiveCameraBundle {
+    commands.spawn_bundle(Camera3dBundle {
         transform: Transform::from_xyz(0.0, 10.0, 1.0 * 10.0)
             .looking_at((0.0, 0.0, 0.0).into(), (0.0, 1.0, 0.0).into()),
         ..default()
@@ -143,7 +146,11 @@ fn boids_rules_system(
             }
 
             let distance_sq = this_boid_pos.distance_squared(other_boid_pos);
-            if distance_sq > view_range_sq { // TODO: also implement FOV to prevent clumping that locks
+            // dbg!(boid_transform.forward().angle_between(other_boid_pos - this_boid_pos));
+
+            if distance_sq > view_range_sq || 
+                boid_transform.forward().angle_between(other_boid_pos - this_boid_pos) > PI/2.0{ // TODO: also implement FOV to prevent clumping that locks
+                // print!("Behind me");
                 continue;
             }
             sum_of_other_boids_positions += other_boid_pos.xz();
@@ -198,9 +205,9 @@ fn apply_velocity_system(mut boids_query: Query<(&Velocity, &mut Transform)>, ti
     }
 }
 
-fn camera_fit_system(boids_query: Query<&Transform, With<Velocity>>, mut camera_query: Query<(&PerspectiveProjection, &mut Transform), Without<Velocity>>){
+fn camera_fit_system(boids_query: Query<&Transform, With<Velocity>>, mut camera_query: Query<(&Projection, &mut Transform), Without<Velocity>>){
     let boids_positions: Vec<Vec3> = boids_query.iter().map(|t| t.translation).collect();
-    if boids_positions.len() == 0 { return; }
+    if boids_positions.is_empty() { return; }
     let mut aabb_min = Vec3::new(f32::MAX, f32::MAX, f32::MAX);
     let mut aabb_max = Vec3::new(f32::MIN, f32::MIN, f32::MIN);
     for boid in boids_positions.iter() {
@@ -230,14 +237,16 @@ fn camera_fit_system(boids_query: Query<&Transform, With<Velocity>>, mut camera_
     }
 
     let bounding_sphere_radius = (boid_farthest_from_aabb_center - aabb_center).length();
-    dbg!(aabb_center);
-    let (perspective_projection, mut camera_transform) = camera_query.iter_mut().next().unwrap();
-    let mut fov = perspective_projection.fov; // this is vertical, I think
+    let (projection, mut camera_transform) = camera_query.single_mut();
+    let perspective_projection = match projection {
+        Projection::Perspective(pp) => pp,
+        _ => unreachable!()
+    };
+    let mut fov = perspective_projection.fov; // this is vertical
     let h_fov = ((fov/2.0).tan() * perspective_projection.aspect_ratio).atan() * 2.0;
     fov = fov.min(h_fov);
     let required_camera_distance = bounding_sphere_radius / (fov/2.0).sin();
     if required_camera_distance.is_nan() { panic!("required_camera_distance is NaN!")}
-    dbg!(required_camera_distance);
     let camera_pos_normalized = camera_transform.translation.normalize();
     camera_transform.translation = camera_pos_normalized * required_camera_distance;
 }
