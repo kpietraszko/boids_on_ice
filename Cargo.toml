@@ -9,6 +9,7 @@ edition = "2021"
 bevy = { version = "0.7.0"}
 iyes_loopless = { version = "0.6.1" }
 rand = "0.8.5"
+bevy-inspector-egui = "0.11"
 bevy_web_fullscreen = { git = "https://github.com/ostwilkens/bevy_web_fullscreen" }
 
 # Enable a small amount of optimization in debug mode
