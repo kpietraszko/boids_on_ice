@@ -289,9 +289,9 @@ fn camera_fit_system(
         panic!("required_camera_distance is NaN!")
     }
 
-    let new_camera_pos_without_zoom = aabb_center + Vec3::new(0.0,10.0,10.0);
-    let camera_pos_normalized = new_camera_pos_without_zoom.normalize();
-    camera_transform.translation = camera_pos_normalized * required_camera_distance;
+    camera_transform.translation = Vec3::new(aabb_center.x, 0.0, aabb_center.z) + 
+        (Vec3::new(0.0,1.0,1.0) * required_camera_distance);
+    
 }
 
 fn get_velocity_away_from_walls(
