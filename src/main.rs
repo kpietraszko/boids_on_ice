@@ -15,6 +15,9 @@ use bevy_web_fullscreen::FullViewportPlugin;
 #[derive(Component)]
 struct Velocity(Vec2);
 
+#[derive(Component)]
+struct PreviousVelocity(Vec2);
+
 fn main() {
     let mut app = App::new();
     app.insert_resource(GameConfig {
@@ -86,7 +89,8 @@ fn setup(
             .insert(Velocity(Vec2::new(
                 velocity_between.sample(&mut rng),
                 velocity_between.sample(&mut rng),
-            )));
+            )))
+            .insert(PreviousVelocity(Vec2::default()));
     }
 
     // directional light
@@ -122,7 +126,7 @@ fn setup(
 }
 
 fn boids_rules_system(
-    mut boids_query: Query<(&mut Velocity, &Transform)>,
+    mut boids_query: Query<(&mut Velocity, &Transform, &mut PreviousVelocity)>,
     game_config: Res<GameConfig>,
 ) {
     let view_range_sq = game_config.view_range * game_config.view_range;
@@ -136,7 +140,8 @@ fn boids_rules_system(
 
     // let max_z = all_boids.iter().map(|b| b.1.z).reduce(f32::max).unwrap();
 
-    for (mut velocity, boid_transform) in boids_query.iter_mut() {
+    for (mut velocity, boid_transform, mut previous_velocity) in boids_query.iter_mut() {
+        previous_velocity.0 = velocity.0;
         let this_boid_pos = boid_transform.translation;
         let mut sum_of_other_boids_positions = Vec2::default();
         let mut boids_in_view_range = 0;
@@ -198,8 +203,9 @@ fn boids_rules_system(
     }
 }
 
-fn apply_velocity_system(mut boids_query: Query<(&Velocity, &mut Transform)>, time: Res<Time>) {
-    for (velocity, mut boid_transform) in boids_query.iter_mut() {
+fn apply_velocity_system(mut boids_query: Query<(&Velocity, &mut Transform, &PreviousVelocity)>, time: Res<Time>) {
+    const BOID_HEIGHT: f32 = 0.8;
+    for (velocity, mut boid_transform, previous_velocity) in boids_query.iter_mut() {
         let Velocity(velocity_value) = velocity;
         if velocity_value.is_nan() {
             panic!("Velocity is NaN");
@@ -207,7 +213,14 @@ fn apply_velocity_system(mut boids_query: Query<(&Velocity, &mut Transform)>, ti
         let velocity_this_frame = *velocity_value * time.delta_seconds();
         let velocity_this_frame_3d = Vec3::new(velocity_this_frame.x, 0.0, velocity_this_frame.y);
         boid_transform.translation += velocity_this_frame_3d;
-        boid_transform.rotation = Quat::from_rotation_arc(
+        let acceleration = (*velocity_value - previous_velocity.0) * time.delta_seconds();
+        let rotation_axis = Vec3::new(acceleration.x, 0.0, acceleration.y).normalize().cross(Vec3::Y);
+        boid_transform.translation.y += BOID_HEIGHT / 2.0;
+        // dbg!(acceleration.length());
+        boid_transform.rotation = Quat::from_axis_angle(rotation_axis, acceleration.length());
+        // TODO: implement acceleration, rotate according to acceleration
+        boid_transform.translation.y -= BOID_HEIGHT / 2.0;
+        boid_transform.rotation *= Quat::from_rotation_arc(
             -Vec3::Z,
             Vec3::new(velocity_this_frame.x, 0.0, velocity_this_frame.y).normalize(),
         );
