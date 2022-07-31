@@ -19,7 +19,7 @@ fn main() {
     let mut app = App::new();
     app.insert_resource(GameConfig {
         target_number_of_boids: 200,
-        view_range: 2000.0,
+        view_range: 1.0,
     })
     .insert_resource(AmbientLight {
         color: Color::ALICE_BLUE,
@@ -129,11 +129,15 @@ fn boids_rules_system(
     let separation_distance_sq = 0.4f32.powf(2.0);
 
     // Vec<(Velocity,translation)>
-    let all_boids: Vec<(Vec2,Vec3)> = boids_query.iter().map(|b| (b.0.0, b.1.translation) ).collect();
+    let all_boids: Vec<(Vec2, Vec3)> = boids_query
+        .iter()
+        .map(|b| (b.0 .0, b.1.translation))
+        .collect();
+
+    // let max_z = all_boids.iter().map(|b| b.1.z).reduce(f32::max).unwrap();
 
     for (mut velocity, boid_transform) in boids_query.iter_mut() {
         let this_boid_pos = boid_transform.translation;
-        let this_boid_velocity = velocity.0;
         let mut sum_of_other_boids_positions = Vec2::default();
         let mut boids_in_view_range = 0;
         let mut separation_vector = Vec2::default();
@@ -148,8 +152,13 @@ fn boids_rules_system(
             let distance_sq = this_boid_pos.distance_squared(other_boid_pos);
             // dbg!(boid_transform.forward().angle_between(other_boid_pos - this_boid_pos));
 
-            if distance_sq > view_range_sq || 
-                boid_transform.forward().angle_between(other_boid_pos - this_boid_pos) > PI/2.0{ // TODO: also implement FOV to prevent clumping that locks
+            if distance_sq > view_range_sq
+                || boid_transform
+                    .forward()
+                    .angle_between(other_boid_pos - this_boid_pos)
+                    > (2.0 * PI) / 3.0
+            {
+                //PI/2.0{
                 // print!("Behind me");
                 continue;
             }
@@ -158,17 +167,16 @@ fn boids_rules_system(
             boids_in_view_range += 1;
 
             if distance_sq > separation_distance_sq {
-                // TODO: maybe also check distance from "walls"
                 continue;
             }
 
             separation_vector -= other_boid_pos.xz() - this_boid_pos.xz();
         }
 
-        if boids_in_view_range == 0 {
-            return;
-        }
-        
+        // bounds
+        velocity.0 += get_velocity_away_from_walls(this_boid_pos, 0.1, -10.0, 10.0, -10.0, 10.0);
+
+        if boids_in_view_range != 0 {
         // cohesion
         velocity.0 += (sum_of_other_boids_positions / (boids_in_view_range as f32)
             - this_boid_pos.xz())
@@ -178,24 +186,25 @@ fn boids_rules_system(
         velocity.0 += separation_vector;
 
         // alignment
-        velocity.0 += (sum_of_other_boids_velocities / (boids_in_view_range as f32) - this_boid_velocity) / 8.0;
+        velocity.0 += (sum_of_other_boids_velocities / (boids_in_view_range as f32)) / 8.0;
+        }
 
+        const MAX_SPEED: f32 = 4.0; //1.0;
+        let speed = velocity.0.length();
+        if speed > MAX_SPEED {
+            let velocity_normalized = velocity.0.normalize();
+            velocity.0 = velocity_normalized * MAX_SPEED;
+        }
     }
 }
 
 fn apply_velocity_system(mut boids_query: Query<(&Velocity, &mut Transform)>, time: Res<Time>) {
-    const MAX_SPEED: f32 = 10000.0; //1.0;
     for (velocity, mut boid_transform) in boids_query.iter_mut() {
-        let Velocity(mut velocity_value) = velocity;
+        let Velocity(velocity_value) = velocity;
         if velocity_value.is_nan() {
             panic!("Velocity is NaN");
         }
-        let speed = velocity_value.length();
-        if speed > MAX_SPEED {
-            let velocity_normalized = velocity_value.normalize();
-            velocity_value = velocity_normalized * MAX_SPEED;
-        }
-        let velocity_this_frame = velocity_value * time.delta_seconds();
+        let velocity_this_frame = *velocity_value * time.delta_seconds();
         let velocity_this_frame_3d = Vec3::new(velocity_this_frame.x, 0.0, velocity_this_frame.y);
         boid_transform.translation += velocity_this_frame_3d;
         boid_transform.rotation = Quat::from_rotation_arc(
@@ -205,26 +214,31 @@ fn apply_velocity_system(mut boids_query: Query<(&Velocity, &mut Transform)>, ti
     }
 }
 
-fn camera_fit_system(boids_query: Query<&Transform, With<Velocity>>, mut camera_query: Query<(&Projection, &mut Transform), Without<Velocity>>){
+fn camera_fit_system(
+    boids_query: Query<&Transform, With<Velocity>>,
+    mut camera_query: Query<(&Projection, &mut Transform), Without<Velocity>>,
+) {
     let boids_positions: Vec<Vec3> = boids_query.iter().map(|t| t.translation).collect();
-    if boids_positions.is_empty() { return; }
+    if boids_positions.is_empty() {
+        return;
+    }
     let mut aabb_min = Vec3::new(f32::MAX, f32::MAX, f32::MAX);
     let mut aabb_max = Vec3::new(f32::MIN, f32::MIN, f32::MIN);
     for boid in boids_positions.iter() {
         aabb_min = Vec3::new(
             aabb_min.x.min(boid.x),
             aabb_min.y.min(boid.y),
-            aabb_min.z.min(boid.z)
+            aabb_min.z.min(boid.z),
         );
 
         aabb_max = Vec3::new(
             aabb_max.x.max(boid.x),
             aabb_max.y.max(boid.y),
-            aabb_max.z.max(boid.z)
+            aabb_max.z.max(boid.z),
         )
     }
 
-    let aabb_center = aabb_min.lerp(aabb_max, 0.5); 
+    let aabb_center = aabb_min.lerp(aabb_max, 0.5);
     let mut boid_farthest_from_aabb_center = boids_positions[0];
     let mut farthest_dist_sq = 0f32;
 
@@ -240,13 +254,40 @@ fn camera_fit_system(boids_query: Query<&Transform, With<Velocity>>, mut camera_
     let (projection, mut camera_transform) = camera_query.single_mut();
     let perspective_projection = match projection {
         Projection::Perspective(pp) => pp,
-        _ => unreachable!()
+        _ => unreachable!(),
     };
     let mut fov = perspective_projection.fov; // this is vertical
-    let h_fov = ((fov/2.0).tan() * perspective_projection.aspect_ratio).atan() * 2.0;
+    let h_fov = ((fov / 2.0).tan() * perspective_projection.aspect_ratio).atan() * 2.0;
     fov = fov.min(h_fov);
-    let required_camera_distance = bounding_sphere_radius / (fov/2.0).sin();
-    if required_camera_distance.is_nan() { panic!("required_camera_distance is NaN!")}
+    let required_camera_distance = bounding_sphere_radius / (fov / 2.0).sin();
+    if required_camera_distance.is_nan() {
+        panic!("required_camera_distance is NaN!")
+    }
     let camera_pos_normalized = camera_transform.translation.normalize();
     camera_transform.translation = camera_pos_normalized * required_camera_distance;
+}
+
+fn get_velocity_away_from_walls(
+    position: Vec3,
+    repel_value: f32,
+    x_min: f32,
+    x_max: f32,
+    z_min: f32,
+    z_max: f32,
+) -> Vec2 {
+    let mut result = Vec2::default();
+    if position.x < x_min {
+        result.x = repel_value;
+    } else if position.x > x_max {
+        result.x = -repel_value;
+    }
+
+    if position.z < z_min {
+        result.y = repel_value;
+    } else if position.z > z_max {
+        result.y = -repel_value;
+    }
+    if result.x != 0.0 || result.y != 0.0 {
+    }
+    result
 }
