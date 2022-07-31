@@ -5,6 +5,7 @@ use std::f32::consts::PI;
 use approx::abs_diff_eq;
 use bevy::render::camera::Projection;
 use bevy::utils::default;
+use bevy::window::{PresentMode, WindowMode};
 use bevy::{math::Vec3Swizzles, prelude::*};
 // use bevy_inspector_egui::WorldInspectorPlugin;
 use game_config::GameConfig;
@@ -21,8 +22,14 @@ struct PreviousVelocity(Vec2);
 
 fn main() {
     let mut app = App::new();
-    app.insert_resource(GameConfig {
-        target_number_of_boids: 200,
+    app.insert_resource(WindowDescriptor{
+         title: "Boids on ice".to_string(),
+         present_mode: PresentMode::AutoVsync,
+         mode: WindowMode::Fullscreen,
+         ..default()
+    })
+    .insert_resource(GameConfig {
+        target_number_of_boids: 300,
         view_range: 1.0,
     })
     .insert_resource(AmbientLight {
@@ -219,7 +226,8 @@ fn apply_velocity_system(
         boid_transform.translation += velocity_this_frame_3d;
         let new_translation = boid_transform.translation;
 
-        boid_transform.rotation = Quat::from_rotation_arc(
+        let mut new_rotation_transform = *boid_transform;
+        new_rotation_transform.rotation = Quat::from_rotation_arc(
             -Vec3::Z,
             Vec3::new(velocity_this_frame.x, 0.0, velocity_this_frame.y).normalize(),
         );
@@ -233,10 +241,12 @@ fn apply_velocity_system(
             .cross(Vec3::Y);
 
         let lean_angle = -(acceleration.length() * 20.0).clamp(-PI/4.0, PI/4.0);
-        boid_transform.rotate_around(
+        new_rotation_transform.rotate_around(
             Vec3::new(new_translation.x, 0.0, new_translation.z),
             Quat::from_axis_angle(rotation_axis, lean_angle),
         );
+
+        boid_transform.rotation = boid_transform.rotation.slerp(new_rotation_transform.rotation, time.delta_seconds()*4.0);
     }
 }
 
