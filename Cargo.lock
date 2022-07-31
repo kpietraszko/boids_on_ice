@@ -1029,6 +1029,7 @@ checksum = "0d8c1fef690941d3e7788d328517591fecc684c084084702d6ff1641e993699a"
 name = "boids_on_ice"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "bevy",
  "bevy_web_fullscreen",
  "iyes_loopless",

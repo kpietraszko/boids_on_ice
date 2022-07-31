@@ -2,6 +2,7 @@ mod game_config;
 
 use std::f32::consts::PI;
 
+use approx::abs_diff_eq;
 use bevy::render::camera::Projection;
 use bevy::utils::default;
 use bevy::{math::Vec3Swizzles, prelude::*};
@@ -26,7 +27,7 @@ fn main() {
     })
     .insert_resource(AmbientLight {
         color: Color::ALICE_BLUE,
-        brightness: 0.1,
+        brightness: 0.2,
     })
     .add_plugins(DefaultPlugins)
     // .add_plugin(WorldInspectorPlugin::new())
@@ -57,11 +58,11 @@ fn setup(
     commands.spawn_bundle(PbrBundle {
         mesh: meshes.add(Mesh::from(shape::Plane { size: 10.0 })),
         material: materials.add(StandardMaterial {
-            base_color: Color::WHITE,
-            perceptual_roughness: 0.04,
+            base_color: Color::ALICE_BLUE,
+            perceptual_roughness: 0.0,
             ..default()
         }),
-        transform: Transform::default().with_scale((1.5, 1.0, 1.5).into()),
+        transform: Transform::default().with_scale((40.0, 1.0, 40.0).into()),
         ..default()
     });
 
@@ -94,7 +95,7 @@ fn setup(
     }
 
     // directional light
-    const HALF_SIZE: f32 = 10.0;
+    const HALF_SIZE: f32 = 30.0;
     commands.spawn_bundle(DirectionalLightBundle {
         directional_light: DirectionalLight {
             // Configure the projection to better fit the scene
@@ -182,16 +183,16 @@ fn boids_rules_system(
         velocity.0 += get_velocity_away_from_walls(this_boid_pos, 0.1, -10.0, 10.0, -10.0, 10.0);
 
         if boids_in_view_range != 0 {
-        // cohesion
-        velocity.0 += (sum_of_other_boids_positions / (boids_in_view_range as f32)
-            - this_boid_pos.xz())
-            / 100.0;
+            // cohesion
+            velocity.0 += (sum_of_other_boids_positions / (boids_in_view_range as f32)
+                - this_boid_pos.xz())
+                / 100.0;
 
-        // separation
-        velocity.0 += separation_vector;
+            // separation
+            velocity.0 += separation_vector;
 
-        // alignment
-        velocity.0 += (sum_of_other_boids_velocities / (boids_in_view_range as f32)) / 8.0;
+            // alignment
+            velocity.0 += (sum_of_other_boids_velocities / (boids_in_view_range as f32)) / 8.0;
         }
 
         const MAX_SPEED: f32 = 4.0; //1.0;
@@ -203,8 +204,11 @@ fn boids_rules_system(
     }
 }
 
-fn apply_velocity_system(mut boids_query: Query<(&Velocity, &mut Transform, &PreviousVelocity)>, time: Res<Time>) {
-    const BOID_HEIGHT: f32 = 0.8;
+fn apply_velocity_system(
+    mut boids_query: Query<(&Velocity, &mut Transform, &PreviousVelocity)>,
+    time: Res<Time>,
+) {
+    // const BOID_HEIGHT: f32 = 0.8;
     for (velocity, mut boid_transform, previous_velocity) in boids_query.iter_mut() {
         let Velocity(velocity_value) = velocity;
         if velocity_value.is_nan() {
@@ -213,16 +217,24 @@ fn apply_velocity_system(mut boids_query: Query<(&Velocity, &mut Transform, &Pre
         let velocity_this_frame = *velocity_value * time.delta_seconds();
         let velocity_this_frame_3d = Vec3::new(velocity_this_frame.x, 0.0, velocity_this_frame.y);
         boid_transform.translation += velocity_this_frame_3d;
-        let acceleration = (*velocity_value - previous_velocity.0) * time.delta_seconds();
-        let rotation_axis = Vec3::new(acceleration.x, 0.0, acceleration.y).normalize().cross(Vec3::Y);
-        boid_transform.translation.y += BOID_HEIGHT / 2.0;
-        // dbg!(acceleration.length());
-        boid_transform.rotation = Quat::from_axis_angle(rotation_axis, acceleration.length());
-        // TODO: implement acceleration, rotate according to acceleration
-        boid_transform.translation.y -= BOID_HEIGHT / 2.0;
-        boid_transform.rotation *= Quat::from_rotation_arc(
+        let new_translation = boid_transform.translation;
+
+        boid_transform.rotation = Quat::from_rotation_arc(
             -Vec3::Z,
             Vec3::new(velocity_this_frame.x, 0.0, velocity_this_frame.y).normalize(),
+        );
+
+        let acceleration = (*velocity_value - previous_velocity.0) * time.delta_seconds();
+        if abs_diff_eq!(acceleration.length(), 0.0) {
+            continue;
+        }
+        let rotation_axis = Vec3::new(acceleration.x, 0.0, acceleration.y)
+            .normalize()
+            .cross(Vec3::Y);
+
+        boid_transform.rotate_around(
+            Vec3::new(new_translation.x, 0.0, new_translation.z),
+            Quat::from_axis_angle(rotation_axis, acceleration.length() * 10.0),
         );
     }
 }
@@ -276,7 +288,9 @@ fn camera_fit_system(
     if required_camera_distance.is_nan() {
         panic!("required_camera_distance is NaN!")
     }
-    let camera_pos_normalized = camera_transform.translation.normalize();
+
+    let new_camera_pos_without_zoom = aabb_center + Vec3::new(0.0,10.0,10.0);
+    let camera_pos_normalized = new_camera_pos_without_zoom.normalize();
     camera_transform.translation = camera_pos_normalized * required_camera_distance;
 }
 
@@ -300,7 +314,6 @@ fn get_velocity_away_from_walls(
     } else if position.z > z_max {
         result.y = -repel_value;
     }
-    if result.x != 0.0 || result.y != 0.0 {
-    }
+    if result.x != 0.0 || result.y != 0.0 {}
     result
 }

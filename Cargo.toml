@@ -9,6 +9,7 @@ edition = "2021"
 bevy = { version = "0.8.0"}
 iyes_loopless = { version = "0.6.1" }
 rand = "0.8.5"
+approx = "0.5.1"
 # bevy-inspector-egui = "0.11"
 bevy_web_fullscreen = { git = "https://github.com/philpax/bevy_web_fullscreen", branch = "bevy-0.8" }
 
