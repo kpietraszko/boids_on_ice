@@ -195,7 +195,7 @@ fn boids_rules_system(
             velocity.0 += (sum_of_other_boids_velocities / (boids_in_view_range as f32)) / 8.0;
         }
 
-        const MAX_SPEED: f32 = 4.0; //1.0;
+        const MAX_SPEED: f32 = 3.0; //1.0;
         let speed = velocity.0.length();
         if speed > MAX_SPEED {
             let velocity_normalized = velocity.0.normalize();
@@ -232,9 +232,10 @@ fn apply_velocity_system(
             .normalize()
             .cross(Vec3::Y);
 
+        let lean_angle = -(acceleration.length() * 20.0).clamp(-PI/4.0, PI/4.0);
         boid_transform.rotate_around(
             Vec3::new(new_translation.x, 0.0, new_translation.z),
-            Quat::from_axis_angle(rotation_axis, acceleration.length() * 10.0),
+            Quat::from_axis_angle(rotation_axis, lean_angle),
         );
     }
 }
